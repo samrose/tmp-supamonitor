@@ -10,11 +10,25 @@
       let
         pkgs = import nixpkgs { inherit system; };
         naersk-lib = pkgs.callPackage naersk { };
+        isDarwin = pkgs.stdenv.isDarwin;
+
+        # Platform-specific dependencies
+        darwinDeps = with pkgs; [
+          apple-sdk_15
+          libiconv
+        ];
+
+        linuxDeps = with pkgs; [
+          gcc
+        ];
+
+        platformDeps = if isDarwin then darwinDeps else linuxDeps;
+        postgresql = pkgs.postgresql_17;
       in
       {
         defaultPackage = naersk-lib.buildPackage ./.;
-        devShell = with pkgs; mkShell {
-          buildInputs = [
+        devShells.default = pkgs.mkShell {
+          buildInputs = with pkgs; [
             cargo
             rustc
             rustfmt
@@ -29,9 +43,20 @@
             icu
             bison
             flex
-          ];
-          RUST_SRC_PATH = rustPlatform.rustLibSrc;
-          PGRX_PG_CONFIG_PATH = "${postgresql}/bin/pg_config";
+            # Required for pgrx bindgen
+            llvmPackages.libclang
+            llvmPackages.clang
+          ] ++ platformDeps;
+
+          RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
+
+          # pgrx environment variables
+          LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+
+          shellHook = ''
+            export PGRX_HOME="$PWD/.pgrx"
+            export PG_CONFIG="${postgresql.pg_config}/bin/pg_config"
+          '';
         };
       }
     );
